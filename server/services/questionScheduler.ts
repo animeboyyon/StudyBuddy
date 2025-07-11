@@ -78,6 +78,21 @@ class QuestionScheduler {
       
       if (!question) {
         console.log(`No questions found for session ${sessionId}`);
+        // Get user to send message about no questions
+        const user = await storage.getUserByTelegramId(session.userId.toString());
+        if (user) {
+          const chatId = parseInt(user.telegramId);
+          await bot.sendMessage(chatId, 
+            '❌ No questions available for this document yet.\n\n' +
+            'This could be because:\n' +
+            '• The document is still being processed\n' +
+            '• The AI service quota has been exceeded\n' +
+            '• The document content could not be analyzed\n\n' +
+            'Please contact support or try uploading a different document.'
+          );
+        }
+        // Stop the session
+        await storage.updateSession(sessionId, { isActive: false });
         return;
       }
       

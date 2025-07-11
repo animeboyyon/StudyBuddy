@@ -375,9 +375,9 @@ Keep up the great work! 🌟
         return;
       }
       
-      // Check file size (50MB limit)
-      if (document!.file_size! > 50 * 1024 * 1024) {
-        await this.bot.sendMessage(chatId, 'File size must be less than 50MB.');
+      // Check file size (1GB limit)
+      if (document!.file_size! > 1024 * 1024 * 1024) {
+        await this.bot.sendMessage(chatId, 'File size must be less than 1GB.');
         return;
       }
       
@@ -440,8 +440,8 @@ Keep up the great work! 🌟
         let errorMessage = 'Sorry, there was an error processing your document. ';
         if (error.message.includes('network') || error.message.includes('download')) {
           errorMessage += 'Please check your internet connection and try again.';
-        } else if (error.message.includes('OpenAI') || error.message.includes('API')) {
-          errorMessage += 'The AI service is temporarily unavailable. Please try again later.';
+        } else if (error.message.includes('OpenAI') || error.message.includes('API') || error.message.includes('quota') || error.message.includes('429')) {
+          errorMessage += 'The AI service quota has been exceeded. Please contact support to increase the quota.';
         } else if (error.message.includes('file') || error.message.includes('parse')) {
           errorMessage += 'The file format may be corrupted. Please try a different file.';
         } else {

@@ -64,7 +64,7 @@ class FileProcessor {
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     ];
     
-    const maxSize = 50 * 1024 * 1024; // 50MB
+    const maxSize = 1024 * 1024 * 1024; // 1GB
     
     return allowedTypes.includes(mimeType) && fileSize <= maxSize;
   }
