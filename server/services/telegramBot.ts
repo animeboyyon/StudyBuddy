@@ -76,6 +76,8 @@ Commands:
 /help - Show help information
 /sessions - Manage your study sessions
 /study - Start a study session with your latest document
+/exam - Start an exam mode (10 questions in a row)
+/stop - Stop all active study sessions
 /stats - View your learning statistics
 
 Just send me a document to get started! 📚
@@ -94,6 +96,8 @@ Commands:
 • /help - This help message
 • /sessions - View and manage study sessions
 • /study - Start a study session with your latest document
+• /exam - Start an exam mode (10 questions in a row)
+• /stop - Stop all active study sessions
 • /stats - View your learning statistics
 
 To upload study material:
@@ -230,6 +234,103 @@ Keep up the great work! 🌟
       const question = await storage.getRandomQuestionByDocumentId(latestDocument.id);
       if (question) {
         await this.bot.sendMessage(chatId, `❓ Question 1:\n\n${question.question}`);
+        
+        // Update session to track the first question
+        await storage.updateSession(session.id, {
+          lastQuestionAt: new Date(),
+          questionsAsked: 1,
+        });
+        
+        // Set up scheduler to handle the answer
+        questionScheduler.setCurrentQuestion(session.id, question);
+      }
+    });
+
+    this.bot.onText(/\/stop/, async (msg) => {
+      const chatId = msg.chat.id;
+      const telegramId = msg.from?.id.toString() || '';
+      
+      const user = await storage.getUserByTelegramId(telegramId);
+      if (!user) {
+        await this.bot.sendMessage(chatId, 'Please use /start first to register.');
+        return;
+      }
+      
+      const sessions = await storage.getActiveSessionsByUserId(user.id);
+      
+      if (sessions.length === 0) {
+        await this.bot.sendMessage(chatId, 'You have no active study sessions to stop.');
+        return;
+      }
+      
+      // Stop all active sessions
+      for (const session of sessions) {
+        await storage.updateSession(session.id, { isActive: false });
+        questionScheduler.removeSession(session.id);
+      }
+      
+      await this.bot.sendMessage(chatId, 
+        `🛑 All study sessions stopped!\n\n` +
+        `Stopped ${sessions.length} session(s). You can start a new session anytime with /study.`
+      );
+    });
+
+    this.bot.onText(/\/exam/, async (msg) => {
+      const chatId = msg.chat.id;
+      const telegramId = msg.from?.id.toString() || '';
+      
+      const user = await storage.getUserByTelegramId(telegramId);
+      if (!user) {
+        await this.bot.sendMessage(chatId, 'Please use /start first to register.');
+        return;
+      }
+      
+      const userDocuments = await storage.getDocumentsByUserId(user.id);
+      if (userDocuments.length === 0) {
+        await this.bot.sendMessage(chatId, 'You need to upload a document first. Send me a PDF or DOCX file!');
+        return;
+      }
+      
+      const latestDocument = userDocuments[0];
+      const questions = await storage.getQuestionsByDocumentId(latestDocument.id);
+      
+      if (questions.length === 0) {
+        await this.bot.sendMessage(chatId, 'No questions available for this document. Please wait for processing to complete.');
+        return;
+      }
+      
+      // Stop any existing sessions
+      const existingSessions = await storage.getActiveSessionsByUserId(user.id);
+      for (const session of existingSessions) {
+        await storage.updateSession(session.id, { isActive: false });
+        questionScheduler.removeSession(session.id);
+      }
+      
+      // Create exam session
+      const insertSession: InsertStudySession = {
+        userId: user.id,
+        documentId: latestDocument.id,
+        isActive: true,
+        interval: 0, // No interval for exam mode
+        isExamMode: true,
+        examQuestionsCount: Math.min(questions.length, 10), // Max 10 questions
+        questionsAsked: 0,
+      };
+      
+      const session = await storage.createStudySession(insertSession);
+      questionScheduler.addSession(session, this.bot);
+      
+      await this.bot.sendMessage(chatId, 
+        `📝 Exam Mode Started!\n\n` +
+        `Document: ${latestDocument.originalName}\n` +
+        `Questions: ${session.examQuestionsCount}\n\n` +
+        `I'll ask you ${session.examQuestionsCount} questions in a row. Answer each one and I'll provide feedback immediately. Ready? Let's begin! 🎯`
+      );
+      
+      // Send the first question immediately
+      const question = await storage.getRandomQuestionByDocumentId(latestDocument.id);
+      if (question) {
+        await this.bot.sendMessage(chatId, `❓ Question 1 of ${session.examQuestionsCount}:\n\n${question.question}`);
         
         // Update session to track the first question
         await storage.updateSession(session.id, {

@@ -53,6 +53,9 @@ class QuestionScheduler {
       // Skip if waiting for answer
       if (activeSession.waitingForAnswer) continue;
       
+      // Skip exam mode sessions - they handle their own timing
+      if (session.isExamMode) continue;
+      
       // Check if it's time to send a question
       const timeSinceLastQuestion = session.lastQuestionAt 
         ? now.getTime() - session.lastQuestionAt.getTime()
@@ -143,14 +146,34 @@ class QuestionScheduler {
         const chatId = parseInt(user.telegramId);
         const emoji = evaluation.score >= 80 ? '🎉' : evaluation.score >= 60 ? '👍' : '💪';
         
-        await bot.sendMessage(chatId, 
-          `${emoji} Score: ${evaluation.score}%\n\n${evaluation.feedback}\n\nNext question coming in ${session.interval} minutes!`
-        );
+        let feedbackMessage = `${emoji} Score: ${evaluation.score}%\n\n${evaluation.feedback}`;
+        
+        if (session.isExamMode) {
+          // In exam mode, check if we should send next question immediately
+          if (session.questionsAsked < session.examQuestionsCount) {
+            feedbackMessage += `\n\nNext question coming right up!`;
+          } else {
+            feedbackMessage += `\n\n🎉 Exam Complete! You answered ${session.questionsAsked} questions.`;
+            await storage.updateSession(sessionId, { isActive: false });
+            this.removeSession(sessionId);
+          }
+        } else {
+          feedbackMessage += `\n\nNext question coming in ${session.interval} minutes!`;
+        }
+        
+        await bot.sendMessage(chatId, feedbackMessage);
       }
       
       // Reset waiting state
       activeSession.waitingForAnswer = false;
       activeSession.currentQuestion = null;
+      
+      // In exam mode, send next question immediately
+      if (session.isExamMode && session.questionsAsked < session.examQuestionsCount) {
+        setTimeout(async () => {
+          await this.sendQuestion(sessionId, activeSession);
+        }, 2000); // 2 second delay to allow user to read feedback
+      }
       
     } catch (error) {
       console.error('Error handling answer:', error);

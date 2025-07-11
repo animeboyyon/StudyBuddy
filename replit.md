@@ -62,6 +62,15 @@ The system uses PostgreSQL with the following main entities:
 
 ## Recent Changes
 
+### January 2025
+- **Added `/exam` command**: New exam mode that sends 10 questions continuously with immediate feedback
+- **Immediate question delivery in exam mode**: Questions are sent immediately after answering the previous one
+- **Increased file size limit**: Maximum document size increased from 10MB to 50MB
+- **Added `/stop` command**: Users can now stop all active study sessions using the `/stop` command
+- **Database migration complete**: Migrated from in-memory storage to PostgreSQL database for persistent data
+- **Database schema deployed**: Successfully pushed schema changes to PostgreSQL using Drizzle
+- **Updated help messages**: All bot commands now include the new `/exam` and `/stop` commands
+
 ### December 2024
 - **Added `/study` command**: Users now use `/study` to start study sessions instead of text messages
 - **Immediate question delivery**: First question is sent immediately when session starts

@@ -7,6 +7,8 @@ import {
   type QuestionResponse, type InsertQuestionResponse,
   type BotStats
 } from "@shared/schema";
+import { db } from "./db";
+import { eq, desc, and } from "drizzle-orm";
 
 export interface IStorage {
   // User operations
@@ -163,6 +165,8 @@ export class MemStorage implements IStorage {
       interval: insertSession.interval || 15,
       questionsAsked: insertSession.questionsAsked || 0,
       lastQuestionAt: insertSession.lastQuestionAt || null,
+      isExamMode: insertSession.isExamMode ?? false,
+      examQuestionsCount: insertSession.examQuestionsCount || 10,
       createdAt: new Date(),
     };
     this.studySessions.set(id, session);
@@ -252,4 +256,213 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+export class DatabaseStorage implements IStorage {
+  async getUserByTelegramId(telegramId: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.telegramId, telegramId));
+    return user || undefined;
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values({
+        ...insertUser,
+        username: insertUser.username || null,
+        firstName: insertUser.firstName || null,
+        lastName: insertUser.lastName || null,
+        isActive: insertUser.isActive ?? true,
+      })
+      .returning();
+    return user;
+  }
+
+  async updateUser(id: number, updates: Partial<User>): Promise<User | undefined> {
+    const [user] = await db
+      .update(users)
+      .set(updates)
+      .where(eq(users.id, id))
+      .returning();
+    return user || undefined;
+  }
+
+  async createDocument(insertDocument: InsertDocument): Promise<Document> {
+    const [document] = await db
+      .insert(documents)
+      .values({
+        ...insertDocument,
+        status: insertDocument.status || 'processing',
+      })
+      .returning();
+    return document;
+  }
+
+  async getDocumentById(id: number): Promise<Document | undefined> {
+    const [document] = await db.select().from(documents).where(eq(documents.id, id));
+    return document || undefined;
+  }
+
+  async getDocumentsByUserId(userId: number): Promise<Document[]> {
+    return await db.select().from(documents).where(eq(documents.userId, userId)).orderBy(desc(documents.createdAt));
+  }
+
+  async updateDocument(id: number, updates: Partial<Document>): Promise<Document | undefined> {
+    const [document] = await db
+      .update(documents)
+      .set(updates)
+      .where(eq(documents.id, id))
+      .returning();
+    return document || undefined;
+  }
+
+  async createQuestion(insertQuestion: InsertQuestion): Promise<Question> {
+    const [question] = await db
+      .insert(questions)
+      .values({
+        ...insertQuestion,
+        difficulty: insertQuestion.difficulty || 'medium',
+        category: insertQuestion.category || null,
+      })
+      .returning();
+    return question;
+  }
+
+  async getQuestionsByDocumentId(documentId: number): Promise<Question[]> {
+    return await db.select().from(questions).where(eq(questions.documentId, documentId));
+  }
+
+  async getRandomQuestionByDocumentId(documentId: number): Promise<Question | undefined> {
+    const allQuestions = await this.getQuestionsByDocumentId(documentId);
+    if (allQuestions.length === 0) return undefined;
+    return allQuestions[Math.floor(Math.random() * allQuestions.length)];
+  }
+
+  async createStudySession(insertSession: InsertStudySession): Promise<StudySession> {
+    const [session] = await db
+      .insert(studySessions)
+      .values({
+        ...insertSession,
+        isActive: insertSession.isActive ?? true,
+        interval: insertSession.interval || 15,
+        questionsAsked: insertSession.questionsAsked || 0,
+        lastQuestionAt: insertSession.lastQuestionAt || null,
+        isExamMode: insertSession.isExamMode ?? false,
+        examQuestionsCount: insertSession.examQuestionsCount || 10,
+      })
+      .returning();
+    return session;
+  }
+
+  async getActiveSessionsByUserId(userId: number): Promise<StudySession[]> {
+    return await db
+      .select()
+      .from(studySessions)
+      .where(and(eq(studySessions.userId, userId), eq(studySessions.isActive, true)));
+  }
+
+  async getSessionById(id: number): Promise<StudySession | undefined> {
+    const [session] = await db.select().from(studySessions).where(eq(studySessions.id, id));
+    return session || undefined;
+  }
+
+  async updateSession(id: number, updates: Partial<StudySession>): Promise<StudySession | undefined> {
+    const [session] = await db
+      .update(studySessions)
+      .set(updates)
+      .where(eq(studySessions.id, id))
+      .returning();
+    return session || undefined;
+  }
+
+  async createQuestionResponse(insertResponse: InsertQuestionResponse): Promise<QuestionResponse> {
+    const [response] = await db
+      .insert(questionResponses)
+      .values({
+        ...insertResponse,
+        feedback: insertResponse.feedback || null,
+      })
+      .returning();
+    return response;
+  }
+
+  async getResponsesBySessionId(sessionId: number): Promise<QuestionResponse[]> {
+    return await db.select().from(questionResponses).where(eq(questionResponses.sessionId, sessionId));
+  }
+
+  async getBotStats(): Promise<BotStats> {
+    const [stats] = await db.select().from(botStats).limit(1);
+    if (!stats) {
+      // Create initial stats if none exist
+      const [newStats] = await db
+        .insert(botStats)
+        .values({
+          totalUsers: 0,
+          totalDocuments: 0,
+          totalQuestions: 0,
+          totalSessions: 0,
+        })
+        .returning();
+      return newStats;
+    }
+    return stats;
+  }
+
+  async updateBotStats(stats: Partial<BotStats>): Promise<BotStats> {
+    const currentStats = await this.getBotStats();
+    const [updatedStats] = await db
+      .update(botStats)
+      .set({ ...stats, updatedAt: new Date() })
+      .where(eq(botStats.id, currentStats.id))
+      .returning();
+    return updatedStats;
+  }
+
+  async getRecentDocuments(limit: number = 10): Promise<Document[]> {
+    return await db.select().from(documents).orderBy(desc(documents.createdAt)).limit(limit);
+  }
+
+  async getRecentActivity(limit: number = 10): Promise<any[]> {
+    const responses = await db
+      .select()
+      .from(questionResponses)
+      .orderBy(desc(questionResponses.answeredAt))
+      .limit(limit);
+    
+    const docs = await db
+      .select()
+      .from(documents)
+      .orderBy(desc(documents.createdAt))
+      .limit(limit);
+
+    const activity = [
+      ...responses.map(r => ({
+        type: 'question_answered',
+        timestamp: r.answeredAt,
+        data: r,
+      })),
+      ...docs.map(d => ({
+        type: 'document_uploaded',
+        timestamp: d.createdAt,
+        data: d,
+      })),
+    ];
+
+    return activity
+      .sort((a, b) => new Date(b.timestamp!).getTime() - new Date(a.timestamp!).getTime())
+      .slice(0, limit);
+  }
+
+  async getTotalUsers(): Promise<number> {
+    const result = await db.select({ count: users.id }).from(users);
+    return result.length;
+  }
+
+  async getActiveSessions(): Promise<number> {
+    const result = await db
+      .select({ count: studySessions.id })
+      .from(studySessions)
+      .where(eq(studySessions.isActive, true));
+    return result.length;
+  }
+}
+
+export const storage = new DatabaseStorage();

@@ -42,6 +42,8 @@ export const studySessions = pgTable("study_sessions", {
   interval: integer("interval").default(15), // minutes
   questionsAsked: integer("questions_asked").default(0),
   lastQuestionAt: timestamp("last_question_at"),
+  isExamMode: boolean("is_exam_mode").default(false),
+  examQuestionsCount: integer("exam_questions_count").default(10),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
