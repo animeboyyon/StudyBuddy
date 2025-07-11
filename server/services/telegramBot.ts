@@ -51,13 +51,23 @@ class TelegramBotService {
       // Create or get user
       let user = await storage.getUserByTelegramId(telegramId);
       if (!user) {
-        const insertUser: InsertUser = {
-          telegramId,
-          username: msg.from?.username,
-          firstName: msg.from?.first_name,
-          lastName: msg.from?.last_name,
-        };
-        user = await storage.createUser(insertUser);
+        try {
+          const insertUser: InsertUser = {
+            telegramId,
+            username: msg.from?.username,
+            firstName: msg.from?.first_name,
+            lastName: msg.from?.last_name,
+          };
+          user = await storage.createUser(insertUser);
+        } catch (error) {
+          // If user already exists (race condition), fetch it
+          user = await storage.getUserByTelegramId(telegramId);
+          if (!user) {
+            console.error('Error creating user:', error);
+            await this.bot.sendMessage(chatId, 'Sorry, there was an error setting up your account. Please try again.');
+            return;
+          }
+        }
       }
       
       const welcomeMessage = `

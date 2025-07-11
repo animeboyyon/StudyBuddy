@@ -132,14 +132,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Start the bot automatically when server starts
-  if (process.env.NODE_ENV === 'production') {
-    telegramBot.start().then(() => {
-      questionScheduler.start();
-      console.log('Telegram bot and scheduler started automatically');
-    }).catch(error => {
-      console.error('Failed to start bot automatically:', error);
-    });
-  }
+  telegramBot.start().then(() => {
+    questionScheduler.start();
+    console.log('Telegram bot and scheduler started automatically');
+  }).catch(error => {
+    console.error('Failed to start bot automatically:', error);
+  });
 
   const httpServer = createServer(app);
   return httpServer;
