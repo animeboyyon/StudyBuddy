@@ -55,10 +55,19 @@ The system uses PostgreSQL with the following main entities:
 1. **Document Upload**: Users send documents via Telegram bot
 2. **Content Processing**: Files are parsed and text extracted
 3. **Question Generation**: OpenAI generates study questions from content
-4. **Session Management**: Users can start scheduled study sessions
-5. **Question Delivery**: Bot sends questions based on user-defined intervals
+4. **Session Management**: Users use `/study` command to start study sessions
+5. **Question Delivery**: Bot sends first question immediately, then every 15 minutes
 6. **Response Evaluation**: AI evaluates user answers and provides feedback
 7. **Analytics**: Dashboard displays usage statistics and performance metrics
+
+## Recent Changes
+
+### December 2024
+- **Added `/study` command**: Users now use `/study` to start study sessions instead of text messages
+- **Immediate question delivery**: First question is sent immediately when session starts
+- **Enhanced question scheduler**: Added proper question tracking and answer handling
+- **Fixed file processing**: Added mammoth library for DOCX support and resolved PDF processing issues
+- **Updated help messages**: All bot commands now reference the new `/study` workflow
 
 ## External Dependencies
 

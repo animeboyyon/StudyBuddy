@@ -75,6 +75,7 @@ Commands:
 /start - Show this welcome message
 /help - Show help information
 /sessions - Manage your study sessions
+/study - Start a study session with your latest document
 /stats - View your learning statistics
 
 Just send me a document to get started! 📚
@@ -92,12 +93,13 @@ Commands:
 • /start - Welcome message
 • /help - This help message
 • /sessions - View and manage study sessions
+• /study - Start a study session with your latest document
 • /stats - View your learning statistics
 
 To upload study material:
 • Send me a PDF or DOCX file
 • I'll process it and create questions
-• You can then start a study session
+• Use /study to start getting questions every 15 minutes
 
 During a study session:
 • I'll ask you questions every 15 minutes
@@ -183,6 +185,62 @@ Keep up the great work! 🌟
       
       await this.bot.sendMessage(chatId, statsMessage);
     });
+
+    this.bot.onText(/\/study/, async (msg) => {
+      const chatId = msg.chat.id;
+      const telegramId = msg.from?.id.toString() || '';
+      
+      const user = await storage.getUserByTelegramId(telegramId);
+      if (!user) {
+        await this.bot.sendMessage(chatId, 'Please use /start first to register.');
+        return;
+      }
+      
+      const documents = await storage.getDocumentsByUserId(user.id);
+      
+      if (documents.length === 0) {
+        await this.bot.sendMessage(chatId, 'You need to upload a document first! Send me a PDF or DOCX file to get started.');
+        return;
+      }
+      
+      // Use the most recent document
+      const latestDocument = documents[documents.length - 1];
+      
+      const insertSession: InsertStudySession = {
+        userId: user.id,
+        documentId: latestDocument.id,
+        isActive: true,
+        interval: 15,
+        questionsAsked: 0,
+      };
+      
+      const session = await storage.createStudySession(insertSession);
+      
+      // Register with scheduler
+      questionScheduler.addSession(session, this.bot);
+      
+      await this.bot.sendMessage(chatId, 
+        `🚀 Study session started!\n\n` +
+        `📚 Document: ${latestDocument.originalName}\n` +
+        `⏰ Questions every: ${session.interval} minutes\n\n` +
+        `I'll ask you your first question now! 🍀`
+      );
+      
+      // Send the first question immediately
+      const question = await storage.getRandomQuestionByDocumentId(latestDocument.id);
+      if (question) {
+        await this.bot.sendMessage(chatId, `❓ Question 1:\n\n${question.question}`);
+        
+        // Update session to track the first question
+        await storage.updateSession(session.id, {
+          lastQuestionAt: new Date(),
+          questionsAsked: 1,
+        });
+        
+        // Set up scheduler to handle the answer
+        questionScheduler.setCurrentQuestion(session.id, question);
+      }
+    });
   }
 
   private setupMessageHandlers() {
@@ -254,7 +312,7 @@ Keep up the great work! 🌟
           `✅ Document processed successfully!\n\n` +
           `📚 ${savedDocument.originalName}\n` +
           `❓ ${questions.length} questions generated\n\n` +
-          `Would you like to start a study session? Reply with "start session" to begin!`
+          `Ready to start studying? Use /study to begin your session!`
         );
         
       } catch (error) {
@@ -274,40 +332,7 @@ Keep up the great work! 🌟
       const user = await storage.getUserByTelegramId(telegramId);
       if (!user) return;
       
-      // Check if user wants to start a session
-      if (text.toLowerCase().includes('start session')) {
-        const documents = await storage.getDocumentsByUserId(user.id);
-        
-        if (documents.length === 0) {
-          await this.bot.sendMessage(chatId, 'You need to upload a document first!');
-          return;
-        }
-        
-        // Use the most recent document
-        const latestDocument = documents[documents.length - 1];
-        
-        const insertSession: InsertStudySession = {
-          userId: user.id,
-          documentId: latestDocument.id,
-          isActive: true,
-          interval: 15,
-          questionsAsked: 0,
-        };
-        
-        const session = await storage.createStudySession(insertSession);
-        
-        // Register with scheduler
-        questionScheduler.addSession(session, this.bot);
-        
-        await this.bot.sendMessage(chatId, 
-          `🚀 Study session started!\n\n` +
-          `📚 Document: ${latestDocument.originalName}\n` +
-          `⏰ Questions every: ${session.interval} minutes\n\n` +
-          `I'll ask you your first question in ${session.interval} minutes. Good luck! 🍀`
-        );
-        
-        return;
-      }
+      // This is handled by the /study command now
       
       // Check if this is an answer to a question
       await this.handleAnswer(chatId, user.id, text);
@@ -315,18 +340,13 @@ Keep up the great work! 🌟
   }
 
   private async handleAnswer(chatId: number, userId: number, answer: string) {
-    // This would be called when a user answers a question
-    // For now, we'll just acknowledge the answer
-    // In a real implementation, we'd need to track the current question context
-    
     const sessions = await storage.getActiveSessionsByUserId(userId);
     if (sessions.length === 0) return;
     
-    // For simplicity, we'll just provide general feedback
-    await this.bot.sendMessage(chatId, 
-      `Thank you for your answer! 📝\n\n` +
-      `I'll evaluate it and provide feedback. Keep studying! 💪`
-    );
+    // Check if there's an active session waiting for an answer
+    for (const session of sessions) {
+      await questionScheduler.handleAnswer(session.id, answer);
+    }
   }
 
   async sendQuestion(chatId: number, question: string) {

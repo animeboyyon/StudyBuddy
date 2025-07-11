@@ -160,6 +160,22 @@ class QuestionScheduler {
   getActiveSessionCount(): number {
     return this.activeSessions.size;
   }
+
+  setCurrentQuestion(sessionId: number, question: any) {
+    const activeSession = this.activeSessions.get(sessionId);
+    if (activeSession) {
+      activeSession.currentQuestion = question;
+      activeSession.waitingForAnswer = true;
+      
+      // Set timeout to move to next question if no answer
+      setTimeout(() => {
+        if (activeSession.waitingForAnswer) {
+          activeSession.waitingForAnswer = false;
+          activeSession.currentQuestion = null;
+        }
+      }, 5 * 60 * 1000); // 5 minutes timeout
+    }
+  }
 }
 
 export const questionScheduler = new QuestionScheduler();
