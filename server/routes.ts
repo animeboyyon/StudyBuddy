@@ -131,6 +131,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Test OpenAI API
+  app.post('/api/test-openai', async (req, res) => {
+    try {
+      const { content, filename } = req.body;
+      const questions = await openaiService.generateQuestions(content, filename);
+      res.json({ 
+        success: true, 
+        questionsCount: questions.length,
+        sampleQuestion: questions[0]?.question 
+      });
+    } catch (error) {
+      console.error('OpenAI test failed:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error.message 
+      });
+    }
+  });
+
   // Start the bot automatically when server starts
   telegramBot.start().then(() => {
     questionScheduler.start();
