@@ -1,7 +1,7 @@
 import TelegramBot from 'node-telegram-bot-api';
 import { storage } from '../storage';
 import { fileProcessor } from './fileProcessor';
-import { openaiService } from './openaiService';
+import { geminiService } from './geminiService';
 import { questionScheduler } from './questionScheduler';
 import type { InsertUser, InsertDocument, InsertStudySession } from '@shared/schema';
 
@@ -406,7 +406,7 @@ Keep up the great work! 🌟
         const savedDocument = await storage.createDocument(insertDocument);
         
         // Generate questions
-        const questions = await openaiService.generateQuestions(content, savedDocument.originalName);
+        const questions = await geminiService.generateQuestions(content, savedDocument.originalName);
         
         // Save questions
         for (const q of questions) {

@@ -1,6 +1,6 @@
 import * as cron from 'node-cron';
 import { storage } from '../storage';
-import { openaiService } from './openaiService';
+import { geminiService } from './geminiService';
 import type { StudySession } from '@shared/schema';
 import type TelegramBot from 'node-telegram-bot-api';
 

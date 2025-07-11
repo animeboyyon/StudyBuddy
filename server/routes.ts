@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { telegramBot } from "./services/telegramBot";
 import { questionScheduler } from "./services/questionScheduler";
-import { openaiService } from "./services/openaiService";
+import { geminiService } from "./services/geminiService";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Dashboard API routes
@@ -111,7 +111,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: 'Document not found' });
       }
       
-      const questions = await openaiService.generateQuestions(document.content, document.originalName);
+      const questions = await geminiService.generateQuestions(document.content, document.originalName);
       
       // Save questions
       for (const q of questions) {
@@ -135,7 +135,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/test-openai', async (req, res) => {
     try {
       const { content, filename } = req.body;
-      const questions = await openaiService.generateQuestions(content, filename);
+      const questions = await geminiService.generateQuestions(content, filename);
       res.json({ 
         success: true, 
         questionsCount: questions.length,
