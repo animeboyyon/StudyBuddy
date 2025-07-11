@@ -375,9 +375,9 @@ Keep up the great work! 🌟
         return;
       }
       
-      // Check file size (10MB limit)
-      if (document!.file_size! > 10 * 1024 * 1024) {
-        await this.bot.sendMessage(chatId, 'File size must be less than 10MB.');
+      // Check file size (50MB limit)
+      if (document!.file_size! > 50 * 1024 * 1024) {
+        await this.bot.sendMessage(chatId, 'File size must be less than 50MB.');
         return;
       }
       
@@ -428,7 +428,27 @@ Keep up the great work! 🌟
         
       } catch (error) {
         console.error('Error processing document:', error);
-        await this.bot.sendMessage(chatId, 'Sorry, there was an error processing your document. Please try again.');
+        console.error('Error details:', {
+          message: error.message,
+          stack: error.stack,
+          fileId: document?.file_id,
+          fileName: document?.file_name,
+          fileSize: document?.file_size,
+          mimeType: document?.mime_type
+        });
+        
+        let errorMessage = 'Sorry, there was an error processing your document. ';
+        if (error.message.includes('network') || error.message.includes('download')) {
+          errorMessage += 'Please check your internet connection and try again.';
+        } else if (error.message.includes('OpenAI') || error.message.includes('API')) {
+          errorMessage += 'The AI service is temporarily unavailable. Please try again later.';
+        } else if (error.message.includes('file') || error.message.includes('parse')) {
+          errorMessage += 'The file format may be corrupted. Please try a different file.';
+        } else {
+          errorMessage += 'Please try again or contact support if the issue persists.';
+        }
+        
+        await this.bot.sendMessage(chatId, errorMessage);
       }
     });
 
