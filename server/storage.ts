@@ -13,6 +13,7 @@ import { eq, desc, and } from "drizzle-orm";
 export interface IStorage {
   // User operations
   getUserByTelegramId(telegramId: string): Promise<User | undefined>;
+  getUserById(id: number): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, updates: Partial<User>): Promise<User | undefined>;
   
@@ -75,6 +76,10 @@ export class MemStorage implements IStorage {
   
   async getUserByTelegramId(telegramId: string): Promise<User | undefined> {
     return Array.from(this.users.values()).find(user => user.telegramId === telegramId);
+  }
+
+  async getUserById(id: number): Promise<User | undefined> {
+    return this.users.get(id);
   }
   
   async createUser(insertUser: InsertUser): Promise<User> {
@@ -259,6 +264,11 @@ export class MemStorage implements IStorage {
 export class DatabaseStorage implements IStorage {
   async getUserByTelegramId(telegramId: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.telegramId, telegramId));
+    return user || undefined;
+  }
+
+  async getUserById(id: number): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
     return user || undefined;
   }
 

@@ -79,7 +79,7 @@ class QuestionScheduler {
       if (!question) {
         console.log(`No questions found for session ${sessionId}`);
         // Get user to send message about no questions
-        const user = await storage.getUserByTelegramId(session.userId.toString());
+        const user = await storage.getUserById(session.userId);
         if (user) {
           const chatId = parseInt(user.telegramId);
           await bot.sendMessage(chatId, 
@@ -97,7 +97,7 @@ class QuestionScheduler {
       }
       
       // Get user to send message
-      const user = await storage.getUserByTelegramId(session.userId.toString());
+      const user = await storage.getUserById(session.userId);
       if (!user) {
         console.log(`User not found for session ${sessionId}`);
         return;
@@ -156,7 +156,7 @@ class QuestionScheduler {
       });
       
       // Send feedback
-      const user = await storage.getUserByTelegramId(session.userId.toString());
+      const user = await storage.getUserById(session.userId);
       if (user) {
         const chatId = parseInt(user.telegramId);
         const emoji = evaluation.score >= 80 ? '🎉' : evaluation.score >= 60 ? '👍' : '💪';
