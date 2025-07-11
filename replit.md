@@ -63,9 +63,11 @@ The system uses PostgreSQL with the following main entities:
 ## Recent Changes
 
 ### January 2025
+- **Migrated to Google Gemini API**: Switched from OpenAI to Google Gemini API for cost-effective AI processing (free tier with 1500 requests/day)
+- **Fixed answer evaluation**: Resolved issue where bot couldn't evaluate user answers due to incomplete migration to Gemini service
+- **Increased file size limit**: Maximum document size increased from 50MB to 1GB for handling larger study materials
 - **Added `/exam` command**: New exam mode that sends 10 questions continuously with immediate feedback
 - **Immediate question delivery in exam mode**: Questions are sent immediately after answering the previous one
-- **Increased file size limit**: Maximum document size increased from 10MB to 50MB
 - **Added `/stop` command**: Users can now stop all active study sessions using the `/stop` command
 - **Database migration complete**: Migrated from in-memory storage to PostgreSQL database for persistent data
 - **Database schema deployed**: Successfully pushed schema changes to PostgreSQL using Drizzle

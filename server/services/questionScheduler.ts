@@ -140,7 +140,7 @@ class QuestionScheduler {
       const { session, bot, currentQuestion } = activeSession;
       
       // Evaluate answer
-      const evaluation = await openaiService.evaluateAnswer(
+      const evaluation = await geminiService.evaluateAnswer(
         currentQuestion.question,
         currentQuestion.expectedAnswer,
         userAnswer
