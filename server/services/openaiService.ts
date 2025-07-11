@@ -1,9 +1,5 @@
 import OpenAI from 'openai';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR || 'default_key',
-});
-
 export interface GeneratedQuestion {
   question: string;
   expectedAnswer: string;
@@ -18,10 +14,19 @@ export interface AnswerEvaluation {
 }
 
 class OpenAIService {
+  private openai: OpenAI;
+
+  constructor() {
+    this.openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+  }
+
   async generateQuestions(content: string, documentName: string): Promise<GeneratedQuestion[]> {
     try {
+      console.log('Using OpenAI API Key:', process.env.OPENAI_API_KEY?.substring(0, 15) + '...');
       // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
-      const response = await openai.chat.completions.create({
+      const response = await this.openai.chat.completions.create({
         model: "gpt-4o",
         messages: [
           {
@@ -60,7 +65,7 @@ class OpenAIService {
   async evaluateAnswer(question: string, expectedAnswer: string, userAnswer: string): Promise<AnswerEvaluation> {
     try {
       // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
-      const response = await openai.chat.completions.create({
+      const response = await this.openai.chat.completions.create({
         model: "gpt-4o",
         messages: [
           {
@@ -108,16 +113,16 @@ class OpenAIService {
   async summarizeDocument(content: string): Promise<string> {
     try {
       // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
-      const response = await openai.chat.completions.create({
+      const response = await this.openai.chat.completions.create({
         model: "gpt-4o",
         messages: [
           {
             role: "system",
-            content: "You are a skilled summarizer. Create a concise summary of the document content, highlighting key concepts and main ideas."
+            content: "You are an expert at summarizing academic content. Provide a concise but comprehensive summary that captures the key points and main themes."
           },
           {
             role: "user",
-            content: `Please summarize this document content:\n\n${content.slice(0, 8000)}`
+            content: `Summarize this document content:\n\n${content.slice(0, 8000)}`
           }
         ],
         max_tokens: 500,
