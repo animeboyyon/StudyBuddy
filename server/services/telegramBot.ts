@@ -14,6 +14,7 @@ if (!BOT_TOKEN) {
 class TelegramBotService {
   private bot: TelegramBot;
   private isRunning = false;
+  private userSelections: Map<string, { documentId?: number; interval?: number }> = new Map();
 
   constructor() {
     this.bot = new TelegramBot(BOT_TOKEN, { polling: false });
@@ -78,15 +79,17 @@ I help you study by asking questions from your uploaded materials.
 Here's how it works:
 1. Send me a PDF or DOCX file with your study material
 2. I'll process it and generate questions
-3. You can start a study session and I'll ask you questions every 15 minutes
-4. I'll evaluate your answers and provide feedback
+3. Use /study to start a study session with custom settings
+4. I'll ask you questions at your chosen intervals
+5. I'll evaluate your answers and provide feedback
 
 Commands:
 /start - Show this welcome message
 /help - Show help information
-/sessions - Manage your study sessions
-/study - Start a study session with your latest document
+/files - View and select your uploaded documents
+/study - Start a study session with custom settings
 /exam - Start an exam mode (10 questions in a row)
+/sessions - Manage your study sessions
 /stop - Stop all active study sessions
 /stats - View your learning statistics
 
@@ -104,31 +107,67 @@ StudyBot Help 📖
 Commands:
 • /start - Welcome message
 • /help - This help message
-• /sessions - View and manage study sessions
-• /study - Start a study session with your latest document
+• /files - View and select your uploaded documents
+• /study - Start a study session with custom settings
 • /exam - Start an exam mode (10 questions in a row)
+• /sessions - View and manage study sessions
 • /stop - Stop all active study sessions
 • /stats - View your learning statistics
 
 To upload study material:
 • Send me a PDF or DOCX file
 • I'll process it and create questions
-• Use /study to start getting questions every 15 minutes
+• Use /study to start getting questions
 
 During a study session:
-• I'll ask you questions every 15 minutes
+• I'll ask you questions at your chosen intervals
 • Answer in text format
 • I'll evaluate your answer and provide feedback
 
 Tips:
-• Be specific in your answers
-• Take your time to think
-• Review feedback to improve
+• Use /files to choose which document to study
+• You can set custom question intervals (1-60 minutes)
+• Use /exam for rapid-fire question practice
+• Be specific in your answers for better scores
 
 Need more help? Just ask! 🤔
       `;
       
       await this.bot.sendMessage(chatId, helpMessage);
+    });
+
+    this.bot.onText(/\/files/, async (msg) => {
+      const chatId = msg.chat.id;
+      const telegramId = msg.from?.id.toString() || '';
+      
+      const user = await storage.getUserByTelegramId(telegramId);
+      if (!user) {
+        await this.bot.sendMessage(chatId, 'Please use /start first to register.');
+        return;
+      }
+      
+      const documents = await storage.getDocumentsByUserId(user.id);
+      
+      if (documents.length === 0) {
+        await this.bot.sendMessage(chatId, 'You have no uploaded documents. Send me a PDF or DOCX file to get started!');
+        return;
+      }
+      
+      // Create inline keyboard with document options
+      const keyboard = documents.map((doc, index) => [{
+        text: `📄 ${doc.originalName} (${Math.round(doc.fileSize / 1024)}KB)`,
+        callback_data: `select_doc_${doc.id}`
+      }]);
+      
+      await this.bot.sendMessage(chatId, 
+        '📚 Select a document for your next study session:\n\n' +
+        'Click on any document below to select it for studying.',
+        {
+          reply_markup: {
+            inline_keyboard: keyboard
+          }
+        }
+      );
     });
 
     this.bot.onText(/\/sessions/, async (msg) => {
@@ -144,17 +183,23 @@ Need more help? Just ask! 🤔
       const sessions = await storage.getActiveSessionsByUserId(user.id);
       
       if (sessions.length === 0) {
-        await this.bot.sendMessage(chatId, 'You have no active study sessions. Upload a document to start studying!');
+        await this.bot.sendMessage(chatId, 'You have no active study sessions. Use /study to start one!');
         return;
       }
       
-      let message = 'Your active study sessions:\n\n';
+      let message = '📚 Your active study sessions:\n\n';
       for (const session of sessions) {
         const document = await storage.getDocumentById(session.documentId);
-        message += `📚 ${document?.originalName || 'Unknown'}\n`;
+        const sessionType = session.isExamMode ? 'Exam Mode' : 'Study Mode';
+        message += `${sessionType}: ${document?.originalName || 'Unknown'}\n`;
         message += `   Questions asked: ${session.questionsAsked}\n`;
-        message += `   Interval: ${session.interval} minutes\n\n`;
+        if (!session.isExamMode) {
+          message += `   Interval: ${session.interval} minutes\n`;
+        }
+        message += '\n';
       }
+      
+      message += 'Use /stop to stop all sessions.';
       
       await this.bot.sendMessage(chatId, message);
     });
@@ -217,43 +262,49 @@ Keep up the great work! 🌟
         return;
       }
       
-      // Use the most recent document
-      const latestDocument = documents[documents.length - 1];
+      // Check if user has a selected document
+      const userSelection = this.userSelections.get(telegramId);
       
-      const insertSession: InsertStudySession = {
-        userId: user.id,
-        documentId: latestDocument.id,
-        isActive: true,
-        interval: 15,
-        questionsAsked: 0,
-      };
+      if (!userSelection?.documentId) {
+        // Show document selection
+        const keyboard = documents.map((doc) => [{
+          text: `📄 ${doc.originalName}`,
+          callback_data: `study_doc_${doc.id}`
+        }]);
+        
+        await this.bot.sendMessage(chatId, 
+          '📚 First, select which document you want to study:',
+          {
+            reply_markup: {
+              inline_keyboard: keyboard
+            }
+          }
+        );
+        return;
+      }
       
-      const session = await storage.createStudySession(insertSession);
-      
-      // Register with scheduler
-      questionScheduler.addSession(session, this.bot);
+      // Show interval selection
+      const intervalKeyboard = [
+        [
+          { text: '⚡ 5 min', callback_data: 'interval_5' },
+          { text: '🔥 10 min', callback_data: 'interval_10' },
+          { text: '⏰ 15 min', callback_data: 'interval_15' }
+        ],
+        [
+          { text: '📚 20 min', callback_data: 'interval_20' },
+          { text: '🎯 30 min', callback_data: 'interval_30' },
+          { text: '🧠 60 min', callback_data: 'interval_60' }
+        ]
+      ];
       
       await this.bot.sendMessage(chatId, 
-        `🚀 Study session started!\n\n` +
-        `📚 Document: ${latestDocument.originalName}\n` +
-        `⏰ Questions every: ${session.interval} minutes\n\n` +
-        `I'll ask you your first question now! 🍀`
+        '⏱️ How often would you like to receive questions?',
+        {
+          reply_markup: {
+            inline_keyboard: intervalKeyboard
+          }
+        }
       );
-      
-      // Send the first question immediately
-      const question = await storage.getRandomQuestionByDocumentId(latestDocument.id);
-      if (question) {
-        await this.bot.sendMessage(chatId, `❓ Question 1:\n\n${question.question}`);
-        
-        // Update session to track the first question
-        await storage.updateSession(session.id, {
-          lastQuestionAt: new Date(),
-          questionsAsked: 1,
-        });
-        
-        // Set up scheduler to handle the answer
-        questionScheduler.setCurrentQuestion(session.id, question);
-      }
     });
 
     this.bot.onText(/\/stop/, async (msg) => {
@@ -279,6 +330,9 @@ Keep up the great work! 🌟
         questionScheduler.removeSession(session.id);
       }
       
+      // Clear user selections
+      this.userSelections.delete(telegramId);
+      
       await this.bot.sendMessage(chatId, 
         `🛑 All study sessions stopped!\n\n` +
         `Stopped ${sessions.length} session(s). You can start a new session anytime with /study.`
@@ -301,8 +355,199 @@ Keep up the great work! 🌟
         return;
       }
       
-      const latestDocument = userDocuments[0];
-      const questions = await storage.getQuestionsByDocumentId(latestDocument.id);
+      // Check if user has a selected document
+      const userSelection = this.userSelections.get(telegramId);
+      let selectedDoc;
+      
+      if (userSelection?.documentId) {
+        selectedDoc = await storage.getDocumentById(userSelection.documentId);
+      }
+      
+      if (!selectedDoc) {
+        // Show document selection for exam
+        const keyboard = userDocuments.map((doc) => [{
+          text: `📄 ${doc.originalName}`,
+          callback_data: `exam_doc_${doc.id}`
+        }]);
+        
+        await this.bot.sendMessage(chatId, 
+          '📝 Select which document you want to take an exam on:',
+          {
+            reply_markup: {
+              inline_keyboard: keyboard
+            }
+          }
+        );
+        return;
+      }
+      
+      await this.startExamSession(chatId, user.id, selectedDoc.id);
+    });
+
+    // Handle callback queries (inline keyboard responses)
+    this.bot.on('callback_query', async (query) => {
+      const chatId = query.message?.chat.id;
+      const telegramId = query.from.id.toString();
+      const data = query.callback_data;
+      
+      if (!chatId || !data) return;
+      
+      try {
+        if (data.startsWith('select_doc_')) {
+          const documentId = parseInt(data.replace('select_doc_', ''));
+          const document = await storage.getDocumentById(documentId);
+          
+          if (document) {
+            // Store user's document selection
+            const currentSelection = this.userSelections.get(telegramId) || {};
+            this.userSelections.set(telegramId, { ...currentSelection, documentId });
+            
+            await this.bot.editMessageText(
+              `✅ Selected: ${document.originalName}\n\nNow use /study to start a study session or /exam for exam mode.`,
+              {
+                chat_id: chatId,
+                message_id: query.message?.message_id
+              }
+            );
+          }
+        }
+        else if (data.startsWith('study_doc_')) {
+          const documentId = parseInt(data.replace('study_doc_', ''));
+          const document = await storage.getDocumentById(documentId);
+          
+          if (document) {
+            // Store selection and show interval options
+            const currentSelection = this.userSelections.get(telegramId) || {};
+            this.userSelections.set(telegramId, { ...currentSelection, documentId });
+            
+            const intervalKeyboard = [
+              [
+                { text: '⚡ 5 min', callback_data: 'interval_5' },
+                { text: '🔥 10 min', callback_data: 'interval_10' },
+                { text: '⏰ 15 min', callback_data: 'interval_15' }
+              ],
+              [
+                { text: '📚 20 min', callback_data: 'interval_20' },
+                { text: '🎯 30 min', callback_data: 'interval_30' },
+                { text: '🧠 60 min', callback_data: 'interval_60' }
+              ]
+            ];
+            
+            await this.bot.editMessageText(
+              `📄 Selected: ${document.originalName}\n\n⏱️ How often would you like to receive questions?`,
+              {
+                chat_id: chatId,
+                message_id: query.message?.message_id,
+                reply_markup: {
+                  inline_keyboard: intervalKeyboard
+                }
+              }
+            );
+          }
+        }
+        else if (data.startsWith('exam_doc_')) {
+          const documentId = parseInt(data.replace('exam_doc_', ''));
+          const document = await storage.getDocumentById(documentId);
+          
+          if (document) {
+            const user = await storage.getUserByTelegramId(telegramId);
+            if (user) {
+              await this.bot.editMessageText(
+                `📝 Starting exam with: ${document.originalName}`,
+                {
+                  chat_id: chatId,
+                  message_id: query.message?.message_id
+                }
+              );
+              
+              await this.startExamSession(chatId, user.id, documentId);
+            }
+          }
+        }
+        else if (data.startsWith('interval_')) {
+          const interval = parseInt(data.replace('interval_', ''));
+          const userSelection = this.userSelections.get(telegramId);
+          
+          if (userSelection?.documentId) {
+            const user = await storage.getUserByTelegramId(telegramId);
+            const document = await storage.getDocumentById(userSelection.documentId);
+            
+            if (user && document) {
+              await this.bot.editMessageText(
+                `🚀 Starting study session!\n\n📄 Document: ${document.originalName}\n⏰ Questions every: ${interval} minutes`,
+                {
+                  chat_id: chatId,
+                  message_id: query.message?.message_id
+                }
+              );
+              
+              await this.startStudySession(chatId, user.id, userSelection.documentId, interval);
+            }
+          }
+        }
+        
+        await this.bot.answerCallbackQuery(query.id);
+      } catch (error) {
+        console.error('Error handling callback query:', error);
+        await this.bot.answerCallbackQuery(query.id, { text: 'Error processing request' });
+      }
+    });
+  }
+
+  private async startStudySession(chatId: number, userId: number, documentId: number, interval: number) {
+    try {
+      // Stop any existing sessions for this user
+      const existingSessions = await storage.getActiveSessionsByUserId(userId);
+      for (const session of existingSessions) {
+        await storage.updateSession(session.id, { isActive: false });
+        questionScheduler.removeSession(session.id);
+      }
+      
+      const insertSession: InsertStudySession = {
+        userId,
+        documentId,
+        isActive: true,
+        interval,
+        questionsAsked: 0,
+      };
+      
+      const session = await storage.createStudySession(insertSession);
+      
+      // Register with scheduler
+      questionScheduler.addSession(session, this.bot);
+      
+      await this.bot.sendMessage(chatId, 
+        `I'll ask you your first question now! 🍀`
+      );
+      
+      // Send the first question immediately
+      const question = await storage.getRandomQuestionByDocumentId(documentId);
+      if (question) {
+        await this.bot.sendMessage(chatId, `❓ Question 1:\n\n${question.question}`);
+        
+        // Update session to track the first question
+        await storage.updateSession(session.id, {
+          lastQuestionAt: new Date(),
+          questionsAsked: 1,
+        });
+        
+        // Set up scheduler to handle the answer
+        questionScheduler.setCurrentQuestion(session.id, question);
+      } else {
+        await this.bot.sendMessage(chatId, 
+          '❌ No questions available for this document yet. Please wait for processing to complete or try a different document.'
+        );
+        await storage.updateSession(session.id, { isActive: false });
+      }
+    } catch (error) {
+      console.error('Error starting study session:', error);
+      await this.bot.sendMessage(chatId, 'Sorry, there was an error starting your study session. Please try again.');
+    }
+  }
+
+  private async startExamSession(chatId: number, userId: number, documentId: number) {
+    try {
+      const questions = await storage.getQuestionsByDocumentId(documentId);
       
       if (questions.length === 0) {
         await this.bot.sendMessage(chatId, 'No questions available for this document. Please wait for processing to complete.');
@@ -310,7 +555,7 @@ Keep up the great work! 🌟
       }
       
       // Stop any existing sessions
-      const existingSessions = await storage.getActiveSessionsByUserId(user.id);
+      const existingSessions = await storage.getActiveSessionsByUserId(userId);
       for (const session of existingSessions) {
         await storage.updateSession(session.id, { isActive: false });
         questionScheduler.removeSession(session.id);
@@ -318,8 +563,8 @@ Keep up the great work! 🌟
       
       // Create exam session
       const insertSession: InsertStudySession = {
-        userId: user.id,
-        documentId: latestDocument.id,
+        userId,
+        documentId,
         isActive: true,
         interval: 0, // No interval for exam mode
         isExamMode: true,
@@ -332,13 +577,12 @@ Keep up the great work! 🌟
       
       await this.bot.sendMessage(chatId, 
         `📝 Exam Mode Started!\n\n` +
-        `Document: ${latestDocument.originalName}\n` +
         `Questions: ${session.examQuestionsCount}\n\n` +
         `I'll ask you ${session.examQuestionsCount} questions in a row. Answer each one and I'll provide feedback immediately. Ready? Let's begin! 🎯`
       );
       
       // Send the first question immediately
-      const question = await storage.getRandomQuestionByDocumentId(latestDocument.id);
+      const question = await storage.getRandomQuestionByDocumentId(documentId);
       if (question) {
         await this.bot.sendMessage(chatId, `❓ Question 1 of ${session.examQuestionsCount}:\n\n${question.question}`);
         
@@ -351,7 +595,10 @@ Keep up the great work! 🌟
         // Set up scheduler to handle the answer
         questionScheduler.setCurrentQuestion(session.id, question);
       }
-    });
+    } catch (error) {
+      console.error('Error starting exam session:', error);
+      await this.bot.sendMessage(chatId, 'Sorry, there was an error starting your exam. Please try again.');
+    }
   }
 
   private setupMessageHandlers() {
@@ -419,11 +666,14 @@ Keep up the great work! 🌟
           });
         }
         
+        // Auto-select this document for the user
+        this.userSelections.set(telegramId, { documentId: savedDocument.id });
+        
         await this.bot.sendMessage(chatId, 
           `✅ Document processed successfully!\n\n` +
           `📚 ${savedDocument.originalName}\n` +
           `❓ ${questions.length} questions generated\n\n` +
-          `Ready to start studying? Use /study to begin your session!`
+          `This document is now selected for your next study session. Use /study to begin!`
         );
         
       } catch (error) {
@@ -462,8 +712,6 @@ Keep up the great work! 🌟
       
       const user = await storage.getUserByTelegramId(telegramId);
       if (!user) return;
-      
-      // This is handled by the /study command now
       
       // Check if this is an answer to a question
       await this.handleAnswer(chatId, user.id, text);

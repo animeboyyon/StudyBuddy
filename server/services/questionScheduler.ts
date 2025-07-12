@@ -9,6 +9,7 @@ interface ActiveSession {
   bot: TelegramBot;
   currentQuestion?: any;
   waitingForAnswer: boolean;
+  askedQuestions: Set<number>; // Track asked questions to avoid repeats
 }
 
 class QuestionScheduler {
@@ -37,6 +38,7 @@ class QuestionScheduler {
       session,
       bot,
       waitingForAnswer: false,
+      askedQuestions: new Set(),
     });
   }
 
@@ -73,28 +75,29 @@ class QuestionScheduler {
     try {
       const { session, bot } = activeSession;
       
-      // Get a random question from the document
-      const question = await storage.getRandomQuestionByDocumentId(session.documentId);
+      // Get all questions for this document
+      const allQuestions = await storage.getQuestionsByDocumentId(session.documentId);
       
-      if (!question) {
+      if (allQuestions.length === 0) {
         console.log(`No questions found for session ${sessionId}`);
-        // Get user to send message about no questions
-        const user = await storage.getUserById(session.userId);
-        if (user) {
-          const chatId = parseInt(user.telegramId);
-          await bot.sendMessage(chatId, 
-            '❌ No questions available for this document yet.\n\n' +
-            'This could be because:\n' +
-            '• The document is still being processed\n' +
-            '• The AI service quota has been exceeded\n' +
-            '• The document content could not be analyzed\n\n' +
-            'Please contact support or try uploading a different document.'
-          );
-        }
-        // Stop the session
-        await storage.updateSession(sessionId, { isActive: false });
+        await this.handleNoQuestions(sessionId, activeSession);
         return;
       }
+      
+      // Filter out already asked questions
+      const availableQuestions = allQuestions.filter(q => !activeSession.askedQuestions.has(q.id));
+      
+      // If all questions have been asked, reset the set
+      if (availableQuestions.length === 0) {
+        activeSession.askedQuestions.clear();
+        availableQuestions.push(...allQuestions);
+      }
+      
+      // Get a random question from available questions
+      const question = availableQuestions[Math.floor(Math.random() * availableQuestions.length)];
+      
+      // Mark this question as asked
+      activeSession.askedQuestions.add(question.id);
       
       // Get user to send message
       const user = await storage.getUserById(session.userId);
@@ -128,6 +131,28 @@ class QuestionScheduler {
     } catch (error) {
       console.error('Error sending question:', error);
     }
+  }
+
+  private async handleNoQuestions(sessionId: number, activeSession: ActiveSession) {
+    const { session, bot } = activeSession;
+    
+    // Get user to send message about no questions
+    const user = await storage.getUserById(session.userId);
+    if (user) {
+      const chatId = parseInt(user.telegramId);
+      await bot.sendMessage(chatId, 
+        '❌ No questions available for this document yet.\n\n' +
+        'This could be because:\n' +
+        '• The document is still being processed\n' +
+        '• The AI service quota has been exceeded\n' +
+        '• The document content could not be analyzed\n\n' +
+        'Please contact support or try uploading a different document.'
+      );
+    }
+    
+    // Stop the session
+    await storage.updateSession(sessionId, { isActive: false });
+    this.removeSession(sessionId);
   }
 
   async handleAnswer(sessionId: number, userAnswer: string) {
@@ -186,12 +211,65 @@ class QuestionScheduler {
       // In exam mode, send next question immediately
       if (session.isExamMode && session.questionsAsked < session.examQuestionsCount) {
         setTimeout(async () => {
-          await this.sendQuestion(sessionId, activeSession);
+          await this.sendExamQuestion(sessionId, activeSession);
         }, 2000); // 2 second delay to allow user to read feedback
       }
       
     } catch (error) {
       console.error('Error handling answer:', error);
+    }
+  }
+
+  private async sendExamQuestion(sessionId: number, activeSession: ActiveSession) {
+    try {
+      const { session, bot } = activeSession;
+      
+      // Get all questions for this document
+      const allQuestions = await storage.getQuestionsByDocumentId(session.documentId);
+      
+      if (allQuestions.length === 0) {
+        await this.handleNoQuestions(sessionId, activeSession);
+        return;
+      }
+      
+      // Filter out already asked questions
+      const availableQuestions = allQuestions.filter(q => !activeSession.askedQuestions.has(q.id));
+      
+      // If all questions have been asked, reset the set
+      if (availableQuestions.length === 0) {
+        activeSession.askedQuestions.clear();
+        availableQuestions.push(...allQuestions);
+      }
+      
+      // Get a random question from available questions
+      const question = availableQuestions[Math.floor(Math.random() * availableQuestions.length)];
+      
+      // Mark this question as asked
+      activeSession.askedQuestions.add(question.id);
+      
+      // Get user to send message
+      const user = await storage.getUserById(session.userId);
+      if (!user) {
+        console.log(`User not found for session ${sessionId}`);
+        return;
+      }
+      
+      // Send question to user
+      const chatId = parseInt(user.telegramId);
+      await bot.sendMessage(chatId, `❓ Question ${session.questionsAsked + 1} of ${session.examQuestionsCount}:\n\n${question.question}`);
+      
+      // Update session
+      await storage.updateSession(sessionId, {
+        lastQuestionAt: new Date(),
+        questionsAsked: session.questionsAsked + 1,
+      });
+      
+      // Mark as waiting for answer
+      activeSession.waitingForAnswer = true;
+      activeSession.currentQuestion = question;
+      
+    } catch (error) {
+      console.error('Error sending exam question:', error);
     }
   }
 
@@ -204,6 +282,9 @@ class QuestionScheduler {
     if (activeSession) {
       activeSession.currentQuestion = question;
       activeSession.waitingForAnswer = true;
+      
+      // Mark this question as asked
+      activeSession.askedQuestions.add(question.id);
       
       // Set timeout to move to next question if no answer
       setTimeout(() => {
